@@ -1,0 +1,36 @@
+#! /usr/bin/env bash
+
+set -euo pipefail
+
+declare lib_path source_code
+lib_path="$(realpath "$(dirname "${BASH_SOURCE[0]}")/../verbosity.sh")"
+
+source_code=$'
+set -euo pipefail
+# opening file descriptor 5 only for the purpose of this demo
+exec 5>&1
+
+# shellcheck source=../verbosity.sh
+source "__lib_path__"
+
+>&5 printf "\nVERBOSITY LEVEL: %s\n" "$1"
+
+>&5 printf "\e[31m\xE2\x9C\x98\e[39m"
+>&2 printf "\r\e[32m\xE2\x9C\x94\e[39m"
+>&5 printf " error output\n"
+
+>&5 printf "\e[31m\xE2\x9C\x98\e[39m"
+printf "\r\e[32m\xE2\x9C\x94\e[39m"
+>&5 printf " standard output\n"
+
+>&5 printf "\e[31m\xE2\x9C\x98\e[39m"
+>&"${VERBOSITY_FD[2]}" printf "\r\e[32m\xE2\x9C\x94\e[39m"
+>&5 printf " verbose output\n"
+'
+source_code="${source_code/__lib_path__/${lib_path}}"
+readonly source_code lib_path
+
+for option in '--quiet' 'standard' '--verbose'
+do
+    bash -c "${source_code}" -- "${option}"
+done

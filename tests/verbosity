@@ -1,0 +1,351 @@
+#! /usr/bin/env bash
+
+declare FD_OUTPUT_FILE LIB_FILE
+FD_OUTPUT_FILE="$(mktemp --dry-run --tmpdir verbosity-unit.XXXXXXXXXX)"
+LIB_FILE="$(realpath "$(dirname "${BASH_SOURCE[0]}")/../verbosity.sh")"
+readonly FD_OUTPUT_FILE LIB_FILE
+
+function setUp
+{
+    touch "${FD_OUTPUT_FILE}"
+}
+
+function tearDown
+{
+    if [[ -f "${FD_OUTPUT_FILE}" ]]
+    then
+        rm "${FD_OUTPUT_FILE}"
+    fi
+}
+
+#
+#
+# Test source lib
+#
+#
+
+function test_source_custom
+{
+    run_code $'
+VERBOSITY_CUSTOM=true source ___LIB_FILE___
+'
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelNotExists 2
+}
+
+function test_source_default_no_arguments
+{
+    run_code $'
+source ___LIB_FILE___
+'
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelStatus 2 "close"
+    assertVerbosityLevelNotExists 3
+}
+
+function test_source_default_no_meaningful_arguments
+{
+    run_code $'
+source ___LIB_FILE___
+' --not --meaningful
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelStatus 2 "close"
+    assertVerbosityLevelNotExists 3
+}
+
+function test_source_default_arguments_outside_option_list
+{
+    run_code $'
+source ___LIB_FILE___
+' --not --meaningful -- --verbose
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelStatus 2 "close"
+    assertVerbosityLevelNotExists 3
+}
+
+function test_source_default_arguments_verbose
+{
+    run_code $'
+source ___LIB_FILE___
+' --not --meaningful --verbose
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelStatus 2 "open"
+    assertVerbosityLevelNotExists 3
+}
+
+function test_source_default_arguments_quiet
+{
+    run_code $'
+source ___LIB_FILE___
+' --not --meaningful --quiet
+
+    assertVerbosityLevelStatus 1 "close"
+    assertVerbosityLevelStatus 2 "close"
+    assertVerbosityLevelNotExists 3
+}
+
+function test_source_default_arguments_priority
+{
+    run_code $'
+source ___LIB_FILE___
+' --not --meaningful --verbose --quiet
+
+    assertVerbosityLevelStatus 1 "close"
+    assertVerbosityLevelStatus 2 "close"
+    assertVerbosityLevelNotExists 3
+}
+
+
+#
+#
+# Test verbosity::add_level_definition function
+#
+#
+
+function test_add_level_definition
+{
+    run_code $'
+VERBOSITY_CUSTOM=true source ___LIB_FILE___
+verbosity::add_level_definition 3 "--debug" "-d"
+'
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelNotExists 2
+    assertVerbosityLevelStatus 3 "close"
+}
+
+function test_add_level_definition_multiple
+{
+    run_code $'
+VERBOSITY_CUSTOM=true source ___LIB_FILE___
+verbosity::add_level_definition 3 "--debug" "-d"
+verbosity::add_level_definition 10 "--very-verbose" "-vv"
+'
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelNotExists 2
+    assertVerbosityLevelStatus 3 "close"
+    assertVerbosityLevelNotExists 4
+    assertVerbosityLevelStatus 10 "close"
+}
+
+function test_add_level_definition_same_option
+{
+    declare stderr exit_status
+    stderr="$(mktemp)"
+    run_code $'
+VERBOSITY_CUSTOM=true source ___LIB_FILE___
+verbosity::add_level_definition 3 "--debug" "-d"
+verbosity::add_level_definition 10 "--very-verbose" "-d"
+' 2>"${stderr}"
+    exit_status="$?"
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelNotExists 2
+    assertVerbosityLevelStatus 3 "close"
+    assertVerbosityLevelNotExists 4
+    assertVerbosityLevelStatus 10 "close"
+
+    assertEquals "Using the same cli option for multiple level should make the \
+function fail." "1" "${exit_status}"
+    declare expected="verbosity::add_level_definition: cli option '-d' already \
+used for level '3'"
+    if grep -q -F -- "${expected}" "${stderr}"
+    then
+        assertTrue true
+    else
+        fail "stderr should contain:
+${expected}
+Not found in:
+$(cat "${stderr}")"
+    fi
+
+    rm "${stderr}"
+}
+
+#
+#
+# Test verbosity::from_command_line function
+#
+#
+
+function test_command_line_custom_no_arguments
+{
+    run_code $'
+VERBOSITY_CUSTOM=true source ___LIB_FILE___
+verbosity::add_level_definition 0 "--silent"
+verbosity::add_level_definition 3 "--debug"
+verbosity::from_command_line "$@"
+'
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelNotExists 2
+    assertVerbosityLevelStatus 3 "close"
+}
+
+function test_command_line_custom_no_meaningful_arguments
+{
+    run_code $'
+VERBOSITY_CUSTOM=true source ___LIB_FILE___
+verbosity::add_level_definition 0 "--silent"
+verbosity::add_level_definition 3 "--debug"
+verbosity::from_command_line "$@"
+' --not --meaningful
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelNotExists 2
+    assertVerbosityLevelStatus 3 "close"
+}
+
+function test_command_line_custom_arguments_outside_option_list
+{
+    run_code $'
+VERBOSITY_CUSTOM=true source ___LIB_FILE___
+verbosity::add_level_definition 0 "--silent"
+verbosity::add_level_definition 3 "--debug"
+verbosity::from_command_line "$@"
+' --not --meaningful -- --silent
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelNotExists 2
+    assertVerbosityLevelStatus 3 "close"
+}
+
+function test_command_line_custom_arguments_debug
+{
+    run_code $'
+VERBOSITY_CUSTOM=true source ___LIB_FILE___
+verbosity::add_level_definition 0 "--silent"
+verbosity::add_level_definition 3 "--debug"
+verbosity::from_command_line "$@"
+' --not --meaningful --debug
+
+    assertVerbosityLevelStatus 1 "open"
+    assertVerbosityLevelNotExists 2
+    assertVerbosityLevelStatus 3 "open"
+}
+
+function test_command_line_custom_arguments_silent
+{
+    run_code $'
+VERBOSITY_CUSTOM=true source ___LIB_FILE___
+verbosity::add_level_definition 0 "--silent"
+verbosity::add_level_definition 3 "--debug"
+verbosity::from_command_line "$@"
+' --not --meaningful --silent
+
+    assertVerbosityLevelStatus 1 "close"
+    assertVerbosityLevelNotExists 2
+    assertVerbosityLevelStatus 3 "close"
+}
+
+function test_command_line_custom_arguments_priority
+{
+    run_code $'
+VERBOSITY_CUSTOM=true source ___LIB_FILE___
+verbosity::add_level_definition 0 "--silent"
+verbosity::add_level_definition 3 "--debug"
+verbosity::from_command_line "$@"
+' --not --meaningful --debug --silent
+
+    assertVerbosityLevelStatus 1 "close"
+    assertVerbosityLevelNotExists 2
+    assertVerbosityLevelStatus 3 "close"
+}
+
+#
+#
+# Assert helpers
+#
+#
+
+function assertVerbosityLevelNotExists
+{
+    declare -r level="$1"
+
+    declare message="file descriptor for verbosity level '${level}' should not exists"
+
+    declare content="verbosity_level=${level} "
+
+    if grep -q -F -- "${content}" "${FD_OUTPUT_FILE}"
+    then
+        fail "${message}
+List of opened file descriptors:
+$(cat "${FD_OUTPUT_FILE}")"
+    else
+        assertTrue true
+    fi
+}
+
+function assertVerbosityLevelStatus
+{
+    declare -r level="$1"
+    declare -r status="$2"
+
+    declare message="file descriptor for verbosity level '${level}' should be '${status}'"
+    declare device="/dev/null"
+
+    if [[ ${level} -eq 1 ]]
+    then
+        message="stdout should be '${status}'"
+    fi
+
+    if [[ "${status}" == "open" ]]
+    then
+        device="/dev/pts/0"
+    fi
+
+    declare content="verbosity_level=${level} device=${device}"
+
+    if grep -q -F -- "${content}" "${FD_OUTPUT_FILE}"
+    then
+        assertTrue true
+    else
+        fail "${message}
+Line
+${content}
+not found in
+$(cat "${FD_OUTPUT_FILE}")"
+    fi
+}
+
+# run_code fd_file code [args ...]
+function run_code
+{
+    declare code="$1"
+    shift
+    code="${code//___LIB_FILE___/${LIB_FILE}}"
+
+    bash -c "
+declare exit_code
+${code}
+exit_code=\$?
+
+[[ -v VERBOSITY_FD[1] ]] || VERBOSITY_FD[1]=1
+
+while read -r fd device
+do
+    for level in \"\${!VERBOSITY_FD[@]}\"
+    do
+        if [[ \"\${VERBOSITY_FD[\${level}]}\" -eq \"\${fd}\" ]]
+        then
+            echo \"verbosity_level=\${level} device=\${device} file_descriptor_id=\${fd}\" >>\"${FD_OUTPUT_FILE}\"
+            continue 2
+        fi
+    done
+done < <(awk '{print \$9, \$11}' <(ls -lv /proc/\$\$/fd))
+exit \${exit_code}
+" -- "$@"
+    # do not run code after this to keep the exit status code
+}
+
+if [[ "${#BASH_SOURCE[@]}" -eq 1 ]]
+then
+    # shellcheck source=../bin/shunit2.sh
+    source "$(realpath "$(dirname "${BASH_SOURCE[0]}")/../bin/shunit2.sh")"
+fi
