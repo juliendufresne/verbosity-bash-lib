@@ -11,10 +11,10 @@ In short, can:
 ```bash
 source verbosity.sh
 
-declare -r V="${VERBOSE_FD[2]}" # optional, used for brevity reasons
+declare -r VERBOSE="${VERBOSITY_FD[2]}" # optional
 
 echo "This is displayed in standard and verbose mode"
-echo "This is only displayed in verbose mode" >&$V
+echo "This is only displayed in verbose mode" >&"${VERBOSE}"
 echo "This is an error message. Always displayed" >&2
 ```
 
